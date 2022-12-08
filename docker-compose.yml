@@ -1,0 +1,108 @@
+version: '3.7'
+
+services:
+
+  kong-database-poc-one:
+    image: postgres:9.6
+    container_name: kong-database-poc-one
+    ports:
+     - 5432:5432
+    environment:
+     - POSTGRES_USER=kong
+     - POSTGRES_DB=kong
+     - POSTGRES_PASSWORD=password-postgres
+    networks:
+     - kong-net
+    volumes:
+     - "db-data-kong-postgres:/var/lib/postgresql/data"
+     - "/etc/localtime:/etc/localtime:ro"
+
+  kong-migrations-poc-one:
+    image: kong
+    environment:
+     - KONG_DATABASE=postgres
+     - KONG_PG_HOST=kong-database-poc-one
+     - KONG_PG_PASSWORD=password-postgres
+     - KONG_CASSANDRA_CONTACT_POINTS=kong-database-poc-one
+    command: kong migrations bootstrap
+    restart: on-failure
+    networks:
+     - kong-net
+    depends_on:
+     - kong-database-poc-one
+
+  kong-poc-one:
+    image: kong
+    container_name: kong-poc-one
+    environment:
+     - LC_CTYPE=en_US.UTF-8
+     - LC_ALL=en_US.UTF-8
+     - KONG_DATABASE=postgres
+     - KONG_PG_HOST=kong-database-poc-one
+     - KONG_PG_USER=kong
+     - KONG_PG_PASSWORD=password-postgres
+     - KONG_CASSANDRA_CONTACT_POINTS=kong-database-poc-one
+     - KONG_PROXY_ACCESS_LOG=/dev/stdout
+     - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+     - KONG_PROXY_ERROR_LOG=/dev/stderr
+     - KONG_ADMIN_ERROR_LOG=/dev/stderr
+     - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+    restart: on-failure
+    ports:
+     - 8000:8000
+     - 8443:8443
+     - 8001:8001
+     - 8444:8444
+    links:
+     - kong-database-poc-one:kong-database-poc-one
+    networks:
+     - kong-net
+    depends_on:
+     - kong-migrations-poc-one
+    volumes:
+     - "/etc/localtime:/etc/localtime:ro"
+     - "/etc/timezone:/etc/timezone:ro"
+
+  konga-poc-one:
+    image: pantsel/konga
+    ports:
+     - 1337:1337
+    links:
+     - kong-poc-one:kong-poc-one
+    container_name: konga-poc-one
+    environment:
+     - NODE_ENV=production
+    volumes:
+     - "/etc/localtime:/etc/localtime:ro"
+     - "/etc/timezone:/etc/timezone:ro"
+    networks:
+     - kong-net
+    
+  service-go:
+    build: services/go
+    ports:
+     - 8081:8081
+    networks:
+     - kong-net
+
+  service-nodejs:
+    build: services/nodejs
+    ports:
+     - 8082:8082
+    networks:
+     - kong-net
+
+  kong-mock-poc-one:
+    build: kong
+    working_dir: /var/local
+    networks:
+     - kong-net
+    depends_on:
+     - kong-poc-one
+
+volumes:
+  db-data-kong-postgres:
+
+networks:
+  kong-net:
+    external: false
